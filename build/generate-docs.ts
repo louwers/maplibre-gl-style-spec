@@ -9,6 +9,18 @@ import jsonStringify from 'json-stringify-pretty-compact';
 
 const BASE_PATH = 'docs';
 
+type JsonExpressionSyntax = {
+    overloads: {
+        parameters: string[];
+        'output-type': string;
+    }[];
+    parameters?: {
+        name: string;
+        type?: string;
+        description?: string;
+    }[];
+}
+
 type JsonSdkSupport = {
     [info: string]: {
         js?: string;
@@ -20,7 +32,7 @@ type JsonSdkSupport = {
 type JsonObject = {
     required?: boolean;
     units?: string;
-    default?: string | number | boolean;
+    default?: string | number | boolean | {};
     type: string;
     doc: string;
     requires?: any[];
@@ -58,7 +70,6 @@ function topicElement(key: string, value: JsonObject): boolean {
         key !== 'sprite' &&
         key !== 'layers' &&
         key !== 'sources';
-
 }
 
 /**
@@ -90,9 +101,11 @@ function codeBlockMarkdown(code: string, language = 'json'): string {
  * @param support - the support string in the style spec
  * @returns Markdown for support cell
  */
-function supportCell(support?: string) {
+function supportCell(support?: string): string {
     // if no information is present in the style spec, we assume there is no support
     if (support === undefined) return 'Not supported yet';
+    if (support === 'wontfix') return 'Not planned';
+    if (support === 'supported') return '✅';
 
     // if the string is an issue link, generate a link to it
     // there is no support yet but there is a tracking issue
@@ -117,7 +130,32 @@ function sdkSupportToMarkdown(support: JsonSdkSupport): string {
         markdown += `|${row}|${supportCell(supportMatrix.js)}|${supportCell(supportMatrix.android)}|${supportCell(supportMatrix.ios)}|\n`;
     }
     return markdown;
+}
 
+/**
+ * Converts the expression syntax object to markdown format.
+ * @param key - the expression name
+ * @param syntax - the expression syntax object in the style spec
+ * @returns the markdown string for the expression's syntax section
+ */
+function expressionSyntaxToMarkdown(key: string, syntax: JsonExpressionSyntax) {
+    let markdown = '\nSyntax:\n';
+    const codeBlockLines = syntax.overloads.map((overload) => {
+        return `[${[`"${key}"`, ...overload.parameters].join(', ')}]: ${overload['output-type']}`;
+    });
+    markdown += `${codeBlockMarkdown(codeBlockLines.join('\n'), 'js')}\n`;
+    for (const parameter of syntax.parameters ?? []) {
+        markdown += `- \`${parameter.name}\``;
+        if (parameter.type) {
+            const type = parameter.type.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+            markdown += `: *${type}*`;
+        }
+        if (parameter.description) {
+            markdown += ` — ${parameter.description}`;
+        }
+        markdown += '\n';
+    }
+    return markdown;
 }
 
 /**
@@ -164,6 +202,7 @@ function typeToMarkdownLink(type: string): string {
         case 'promoteid':
             return ` [${type}](types.md)`;
         case 'color':
+        case 'projectiondefinition':
         case 'number':
         case 'string':
         case 'boolean':
@@ -172,6 +211,8 @@ function typeToMarkdownLink(type: string): string {
         case 'formatted':
         case 'resolvedimage':
         case 'padding':
+        case 'numberarray':
+        case 'colorarray':
             return ` [${type}](types.md#${type.toLocaleLowerCase()})`;
         case 'filter':
             return ` [${type}](expressions.md)`;
@@ -211,7 +252,11 @@ function convertPropertyToMarkdown(key: string, value: JsonObject, keyPrefix = '
     }
 
     if (value.minimum !== undefined || value.maximum !== undefined) {
-        markdown += ` in range ${formatRange(value.minimum, value.maximum)}`;
+        if (value.type === 'numberArray') {
+            markdown += ` with value(s) in range ${formatRange(value.minimum, value.maximum)}`;
+        } else {
+            markdown += ` in range ${formatRange(value.minimum, value.maximum)}`;
+        }
     }
 
     markdown += '. ';
@@ -224,7 +269,7 @@ function convertPropertyToMarkdown(key: string, value: JsonObject, keyPrefix = '
         markdown += `Units in ${value.units}. `;
     }
     if (value.default !== undefined) {
-        markdown += `Defaults to \`${value.default}\`. `;
+        markdown += `Defaults to \`${JSON.stringify(value.default)}\`. `;
     }
     if (value.requires) {
         markdown += requiresToMarkdown(value.requires);
@@ -370,7 +415,9 @@ function createSourcesContent() {
             },
             'sdk-support': {
                 'basic functionality': {
-                    js: '0.43.0'
+                    js: '0.43.0',
+                    android: '6.0.0',
+                    ios: '4.0.0'
                 }
             }
         },
@@ -467,11 +514,11 @@ function createSourcesContent() {
     content += exampleToMarkdown('sources', v8.$root.sources.example);
 
     for (const sourceKey of v8.source) {
-        const srouceName = sourceKey.replace('source_', '').replace('_', '-');
-        content += `## ${srouceName}\n\n`;
-        content += `${sourcesExtraData[srouceName].doc}\n\n`;
-        content += exampleToMarkdown('sources', sourcesExtraData[srouceName].example);
-        content += sdkSupportToMarkdown(sourcesExtraData[srouceName]['sdk-support']);
+        const sourceName = sourceKey.replace('source_', '').replace('_', '-');
+        content += `## ${sourceName}\n\n`;
+        content += `${sourcesExtraData[sourceName].doc}\n\n`;
+        content += exampleToMarkdown('sources', sourcesExtraData[sourceName].example);
+        content += sdkSupportToMarkdown(sourcesExtraData[sourceName]['sdk-support']);
         content += '\n';
         for (const [key, value] of Object.entries(v8[sourceKey])) {
             if (key === '*') continue;
@@ -501,9 +548,8 @@ function createExpressionsContent() {
             }
             content += `\n### ${key}\n`;
             content += `${value.doc}\n`;
-            value.example.syntax.method.unshift(`"${key}"`);
-            content += `\nSyntax:\n${codeBlockMarkdown(`[${value.example.syntax.method.join(', ')}]: ${value.example.syntax.result}`, 'js')}\n`;
-            content += `\nExample:\n${codeBlockMarkdown(`"some-property": ${formatJSON(value.example.value)}`)}\n`;
+            content += expressionSyntaxToMarkdown(key, value.syntax);
+            content += `\nExample:\n${codeBlockMarkdown(`"some-property": ${formatJSON(value.example)}`)}\n`;
             content += sdkSupportToMarkdown(value['sdk-support'] as any);
             content += '\n';
         }
@@ -529,6 +575,11 @@ function createMainTopics() {
                 content += convertPropertyToMarkdown(subKey, subValue as JsonObject);
             }
         }
+        if (value['sdk-support']) {
+            content += '\n---\n';
+            content += sdkSupportToMarkdown(value['sdk-support']);
+        }
+
         fs.writeFileSync(`${BASE_PATH}/${key}.md`, content);
     }
 }

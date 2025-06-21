@@ -1,34 +1,44 @@
 
-import extend from '../util/extend';
-import ExpressionParsingError from './parsing_error';
-import ParsingContext from './parsing_context';
-import EvaluationContext from './evaluation_context';
+import {extendBy} from '../util/extend';
+import {ExpressionParsingError} from './parsing_error';
+import {ParsingContext} from './parsing_context';
+import {EvaluationContext} from './evaluation_context';
 
-import CompoundExpression, {isFeatureConstant,
+import {CompoundExpression, isFeatureConstant,
     isGlobalPropertyConstant,
     isStateConstant,
     isExpressionConstant
 } from './compound_expression';
 
-import Step from './definitions/step';
-import Interpolate from './definitions/interpolate';
-import Coalesce from './definitions/coalesce';
-import Let from './definitions/let';
-import definitions from './definitions';
+import {Step} from './definitions/step';
+import {Interpolate} from './definitions/interpolate';
+import {Coalesce} from './definitions/coalesce';
+import {Let} from './definitions/let';
+import {expressions} from './definitions';
 
-import RuntimeError from './runtime_error';
+import {RuntimeError} from './runtime_error';
 import {success, error} from '../util/result';
 import {supportsPropertyExpression, supportsZoomExpression, supportsInterpolation} from '../util/properties';
 
-import type {Type, EvaluationKind} from './types';
+import {ColorType, StringType, NumberType, BooleanType, ValueType, FormattedType, PaddingType, ResolvedImageType, VariableAnchorOffsetCollectionType, array, type Type, type EvaluationKind, ProjectionDefinitionType, NumberArrayType, ColorArrayType} from './types';
 import type {Value} from './values';
 import type {Expression} from './expression';
-import type {StylePropertySpecification} from '..';
+import {type StylePropertySpecification} from '..';
 import type {Result} from '../util/result';
 import type {InterpolationType} from './definitions/interpolate';
-import type {PropertyValueSpecification, VariableAnchorOffsetCollectionSpecification} from '../types.g';
+import type {PaddingSpecification, NumberArraySpecification, ColorArraySpecification, PropertyValueSpecification, VariableAnchorOffsetCollectionSpecification} from '../types.g';
 import type {FormattedSection} from './types/formatted';
 import type {Point2D} from '../point2d';
+
+import {ICanonicalTileID} from '../tiles_and_coordinates';
+import {isFunction, createFunction} from '../function';
+import {Color} from './types/color';
+import {Padding} from './types/padding';
+import {NumberArray} from './types/number_array';
+import {ColorArray} from './types/color_array';
+import {VariableAnchorOffsetCollection} from './types/variable_anchor_offset_collection';
+import {ProjectionDefinition} from './types/projection_definition';
+import {GlobalState} from './definitions/global_state';
 
 export type Feature = {
     readonly type: 0 | 1 | 2 | 3 | 'Unknown' | 'Point' | 'MultiPoint' | 'LineString' | 'MultiLineString' | 'Polygon' | 'MultiPolygon';
@@ -49,9 +59,11 @@ export type FeatureState = {[_: string]: any};
 export type GlobalProperties = Readonly<{
     zoom: number;
     heatmapDensity?: number;
+    elevation?: number;
     lineProgress?: number;
     isSupportedScript?: (_: string) => boolean;
     accumulated?: Value;
+    globalState?: Record<string, any>;
 }>;
 
 export class StyleExpression {
@@ -105,7 +117,6 @@ export class StyleExpression {
 
         try {
             const val = this.expression.evaluate(this._evaluator);
-            // eslint-disable-next-line no-self-compare
             if (val === null || val === undefined || (typeof val === 'number' && val !== val)) {
                 return this._defaultValue;
             }
@@ -127,7 +138,7 @@ export class StyleExpression {
 
 export function isExpression(expression: unknown) {
     return Array.isArray(expression) && expression.length > 0 &&
-        typeof expression[0] === 'string' && expression[0] in definitions;
+        typeof expression[0] === 'string' && expression[0] in expressions;
 }
 
 /**
@@ -140,7 +151,7 @@ export function isExpression(expression: unknown) {
  * @private
  */
 export function createExpression(expression: unknown, propertySpec?: StylePropertySpecification | null): Result<StyleExpression, Array<ExpressionParsingError>> {
-    const parser = new ParsingContext(definitions, isExpressionConstant, [], propertySpec ? getExpectedType(propertySpec) : undefined);
+    const parser = new ParsingContext(expressions, isExpressionConstant, [], propertySpec ? getExpectedType(propertySpec) : undefined);
 
     // For string-valued properties, coerce to string at the top level rather than asserting.
     const parsed = parser.parse(expression, undefined, undefined, undefined,
@@ -156,12 +167,14 @@ export function createExpression(expression: unknown, propertySpec?: StyleProper
 export class ZoomConstantExpression<Kind extends EvaluationKind> {
     kind: Kind;
     isStateDependent: boolean;
+    globalStateRefs: Set<string>;
     _styleExpression: StyleExpression;
 
     constructor(kind: Kind, expression: StyleExpression) {
         this.kind = kind;
         this._styleExpression = expression;
         this.isStateDependent = kind !== ('constant' as EvaluationKind) && !isStateConstant(expression.expression);
+        this.globalStateRefs = findGlobalStateRefs(expression.expression);
     }
 
     evaluateWithoutErrorHandling(
@@ -191,7 +204,7 @@ export class ZoomDependentExpression<Kind extends EvaluationKind> {
     kind: Kind;
     zoomStops: Array<number>;
     isStateDependent: boolean;
-
+    globalStateRefs: Set<string>;
     _styleExpression: StyleExpression;
     interpolationType: InterpolationType;
 
@@ -200,6 +213,7 @@ export class ZoomDependentExpression<Kind extends EvaluationKind> {
         this.zoomStops = zoomStops;
         this._styleExpression = expression;
         this.isStateDependent = kind !== ('camera' as EvaluationKind) && !isStateConstant(expression.expression);
+        this.globalStateRefs = findGlobalStateRefs(expression.expression);
         this.interpolationType = interpolationType;
     }
 
@@ -240,6 +254,7 @@ export function isZoomExpression(expression: any): expression is ZoomConstantExp
 
 export type ConstantExpression = {
     kind: 'constant';
+    globalStateRefs: Set<string>;
     readonly evaluate: (
         globals: GlobalProperties,
         feature?: Feature,
@@ -252,6 +267,7 @@ export type ConstantExpression = {
 export type SourceExpression = {
     kind: 'source';
     isStateDependent: boolean;
+    globalStateRefs: Set<string>;
     readonly evaluate: (
         globals: GlobalProperties,
         feature?: Feature,
@@ -264,6 +280,7 @@ export type SourceExpression = {
 
 export type CameraExpression = {
     kind: 'camera';
+    globalStateRefs: Set<string>;
     readonly evaluate: (
         globals: GlobalProperties,
         feature?: Feature,
@@ -279,6 +296,7 @@ export type CameraExpression = {
 export type CompositeExpression = {
     kind: 'composite';
     isStateDependent: boolean;
+    globalStateRefs: Set<string>;
     readonly evaluate: (
         globals: GlobalProperties,
         feature?: Feature,
@@ -334,9 +352,6 @@ export function createPropertyExpression(expressionInput: unknown, propertySpec:
         (new ZoomDependentExpression('composite', expression.value, zoomCurve.labels, interpolationType) as CompositeExpression));
 }
 
-import {isFunction, createFunction} from '../function';
-import {Color, VariableAnchorOffsetCollection} from './values';
-
 // serialization wrapper for old-style stop functions normalized to the
 // expression interface
 export class StylePropertyFunction<T> {
@@ -351,7 +366,7 @@ export class StylePropertyFunction<T> {
     constructor(parameters: PropertyValueSpecification<T>, specification: StylePropertySpecification) {
         this._parameters = parameters;
         this._specification = specification;
-        extend(this, createFunction(this._parameters, this._specification));
+        extendBy(this, createFunction(this._parameters, this._specification));
     }
 
     static deserialize<T>(serialized: {
@@ -389,11 +404,18 @@ export function normalizePropertyExpression<T>(
         if (specification.type === 'color' && typeof value === 'string') {
             constant = Color.parse(value);
         } else if (specification.type === 'padding' && (typeof value === 'number' || Array.isArray(value))) {
-            constant = Padding.parse(value as (number | number[]));
+            constant = Padding.parse(value as PaddingSpecification);
+        } else if (specification.type === 'numberArray' && (typeof value === 'number' || Array.isArray(value))) {
+            constant = NumberArray.parse(value as NumberArraySpecification);
+        } else if (specification.type === 'colorArray' && (typeof value === 'string' || Array.isArray(value))) {
+            constant = ColorArray.parse(value as ColorArraySpecification);
         } else if (specification.type === 'variableAnchorOffsetCollection' && Array.isArray(value)) {
             constant = VariableAnchorOffsetCollection.parse(value as VariableAnchorOffsetCollectionSpecification);
+        } else if (specification.type === 'projectionDefinition' && typeof value === 'string') {
+            constant = ProjectionDefinition.parse(value);
         }
         return {
+            globalStateRefs: new Set<string>(),
             kind: 'constant',
             evaluate: () => constant
         };
@@ -441,9 +463,16 @@ function findZoomCurve(expression: Expression): Step | Interpolate | ExpressionP
     return result;
 }
 
-import {ColorType, StringType, NumberType, BooleanType, ValueType, FormattedType, PaddingType, ResolvedImageType, VariableAnchorOffsetCollectionType, array} from './types';
-import Padding from '../util/padding';
-import {ICanonicalTileID} from '../tiles_and_coordinates';
+export function findGlobalStateRefs(expression: Expression, results = new Set<string>()): Set<string> {
+    if (expression instanceof GlobalState) {
+        results.add(expression.key);
+    }
+
+    expression.eachChild(childExpression => {
+        findGlobalStateRefs(childExpression, results);
+    });
+    return results;
+}
 
 function getExpectedType(spec: StylePropertySpecification): Type {
     const types = {
@@ -454,6 +483,9 @@ function getExpectedType(spec: StylePropertySpecification): Type {
         boolean: BooleanType,
         formatted: FormattedType,
         padding: PaddingType,
+        numberArray: NumberArrayType,
+        colorArray: ColorArrayType,
+        projectionDefinition: ProjectionDefinitionType,
         resolvedImage: ResolvedImageType,
         variableAnchorOffsetCollection: VariableAnchorOffsetCollectionType
     };
@@ -471,15 +503,21 @@ function getDefaultValue(spec: StylePropertySpecification): Value {
         // default color ramp, but createExpression expects a simple value to fall
         // back to in case of runtime errors
         return new Color(0, 0, 0, 0);
-    } else if (spec.type === 'color') {
-        return Color.parse(spec.default) || null;
-    } else if (spec.type === 'padding') {
-        return Padding.parse(spec.default) || null;
-    } else if (spec.type === 'variableAnchorOffsetCollection') {
-        return VariableAnchorOffsetCollection.parse(spec.default) || null;
-    } else if (spec.default === undefined) {
-        return null;
-    } else {
-        return spec.default;
+    }
+    switch (spec.type) {
+        case 'color':
+            return Color.parse(spec.default) || null;
+        case 'padding':
+            return Padding.parse(spec.default) || null;
+        case 'numberArray':
+            return NumberArray.parse(spec.default) || null;
+        case 'colorArray':
+            return ColorArray.parse(spec.default) || null;
+        case 'variableAnchorOffsetCollection':
+            return VariableAnchorOffsetCollection.parse(spec.default) || null;
+        case 'projectionDefinition':
+            return ProjectionDefinition.parse(spec.default) || null;
+        default:
+            return (spec.default === undefined ? null : spec.default);
     }
 }

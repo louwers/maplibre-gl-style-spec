@@ -4,6 +4,118 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+- _...Add new stuff here..._
+
+## 23.3.0
+
+### ✨ Features and improvements
+
+- Add new layer type: `color-relief ([#1067](https://github.com/maplibre/maplibre-style-spec/issues/1067))
+
+### 🐞 Bug fixes
+
+- Add missing `global-state` expression typing ([#1130](https://github.com/maplibre/maplibre-style-spec/pull/1130))
+
+## 23.2.3
+
+### ✨ Features and improvements
+
+- Restructure expression syntax documentation ([#1112](https://github.com/maplibre/maplibre-style-spec/pull/1112))
+- Add global state ref support ([#1120](https://github.com/maplibre/maplibre-style-spec/pull/1120))
+
+## 23.2.2
+
+### 🐞 Bug fixes
+
+- Fix state validation - no error case ([#1109](https://github.com/maplibre/maplibre-style-spec/pull/1109))
+
+## 23.2.1
+
+### 🐞 Bug fixes
+
+- Validate that `numberArray` and `colorArray` values are non-empty ([#1094](https://github.com/maplibre/maplibre-style-spec/pull/1094))
+
+## 23.2.0
+
+### ✨ Features and improvements
+
+- `glyphs` is now optional even if a symbol layer specifies `text-field`; if it is unset, `text-font` is interpreted as a fallback font list ([#1068](https://github.com/maplibre/maplibre-style-spec/pull/1068))
+- `hillshade` layer now supports multiple methods, and the `multidirectional` method supports array values for illumination properties ([#1088](https://github.com/maplibre/maplibre-style-spec/pull/1088))
+- Add `global-state` expression and `state` root property ([#1044](https://github.com/maplibre/maplibre-style-spec/pull/1044)).
+
+### 🐞 Bug fixes
+
+- Fix RuntimeError class, make it inherited from Error ([#983](https://github.com/maplibre/maplibre-style-spec/issues/983))
+- Validate that `layers` array items are objects instead of throwing an error if not ([#1026](https://github.com/maplibre/maplibre-style-spec/pull/1026))
+- Multiple fixes related to validating and parsing of strings containing object prototype keys
+   - Fix `validate_object` crashing when object prototype keys used in style's objects ([#1028](https://github.com/maplibre/maplibre-style-spec/pull/1028))
+   - Fix `validate_color` crashing when object prototype keys used as color strings ([#1036](https://github.com/maplibre/maplibre-style-spec/pull/1036))
+   - Fix color coercion in expressions (e.g. `to_color`) producing invalid colors when object prototype keys used as color strings ([#1036](https://github.com/maplibre/maplibre-style-spec/pull/1036))
+
+## 23.1.0
+
+### ✨ Features and improvements
+
+- Add `vertical-align` option to `format` expression ([#832](https://github.com/maplibre/maplibre-style-spec/issues/832))
+
+## 23.0.0
+
+### ✨ Features and improvements
+
+- Adjust `geometry-type` expression specification and MapLibre GL JS implementation to the historic behavior of only returning `Point`, `LineString` or `Polygon`, not the `Multi...` variants of these. This reverts a recent change to the implementation, which was causing issues in a [large number of styles](https://github.com/maplibre/maplibre-style-spec/issues/965).
+
+## 22.0.1
+
+### 🐞 Bug fixes
+
+- ~~Fix issue with `geomtry-type` filter ([#924](https://github.com/maplibre/maplibre-style-spec/pull/924))~~ This was reverted in 23.0.0 due to causing issues in [a large number of styles](https://github.com/maplibre/maplibre-style-spec/issues/965).
+
+## 22.0.0
+
+### ✨ Features and improvements
+
+- Use named imports internally - no package entrypoints changed ([#904](https://github.com/maplibre/maplibre-style-spec/pull/904))
+- Add projection type expression syntax ([#888](https://github.com/maplibre/maplibre-style-spec/pull/888))
+
+## 21.2.0
+
+### ✨ Features and improvements
+
+- Add `vertical-perspective` projection ([#890](https://github.com/maplibre/maplibre-style-spec/pull/890))
+
+## 21.1.0
+
+### ✨ Features and improvements
+
+- Added `centerAltitude` property to stylesheet ([#851](https://github.com/maplibre/maplibre-style-spec/issues/851))
+
+## 21.0.0
+
+### ✨ Features and improvements
+
+- ~~Aligned the implementation of `["geometry-type"]` with [its spec](https://maplibre.org/maplibre-style-spec/expressions/#geometry-type). Now, when applicable, `["geometry-type"]` returns values not available while using `"$type"`: `"MultiPoint"`, `"MultiLineString"`, and `"MultiPolygon"`. The behaviour of `"$type"` has not changed. ([#519](https://github.com/maplibre/maplibre-style-spec/pull/519))~~ This was reverted in 23.0.0 due to causing issues in [a large number of styles](https://github.com/maplibre/maplibre-style-spec/issues/965).
+
+## 20.4.0
+
+### ✨ Features and improvements
+
+* Added `roll` property to stylesheet ([#850](https://github.com/maplibre/maplibre-style-spec/issues/850))
+
+## 20.3.1
+
+### 🐞 Bug fixes
+
+- The `index-of`, `length`, and `slice` expression operators count a UTF-16 surrogate pair as a single character. ([#779](https://github.com/maplibre/maplibre-style-spec/pull/779))
+
+## 20.3.0
+
+### ✨ Features and improvements
+
+- Added `Projection` specifications [#687](https://github.com/maplibre/maplibre-style-spec/pull/687)
+- Updated `Sky` specifications to support atmosphere and other required features [#686](https://github.com/maplibre/maplibre-style-spec/pull/686)
+
+### 🐞 Bug fixes
+
 - Change `assert` to `with` in JSON modules. Requires Node.js 18.20.0 or later, and supports Node.js 22.0.0 or later - [#675](https://github.com/maplibre/maplibre-style-spec/pull/675)
 
 ## 20.2.0
